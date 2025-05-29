@@ -8,6 +8,13 @@
   &.teams {
     font-family: $ms-font-family-fallbacks;
   }
+  :global {
+  .ant-card-head-title {
+    font-size: 1.2rem;   
+  }
+}
+
+
 }
 .chatContainer {  
   margin: 0 auto;
@@ -111,3 +118,4 @@
     }
   }
 }
+//Add SPFX global styles using global 

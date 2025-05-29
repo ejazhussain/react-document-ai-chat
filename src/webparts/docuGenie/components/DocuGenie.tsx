@@ -4,7 +4,7 @@ import type { IDocuGenieProps } from './IDocuGenieProps';
 import { UploadOutlined, RedoOutlined } from '@ant-design/icons';
 
 import { useState } from 'react';
-import { Button, Card, List, message, notification, Upload } from 'antd';
+import { Button, Card, List, message, notification, Upload, Spin, Flex } from 'antd';
 import TextArea from 'antd/es/input/TextArea';
 import { NotificationConfig, NotificationPlacement } from 'antd/es/notification/interface';
 import { MarkdownRenderer } from './MarkdownRenderer';
@@ -72,26 +72,35 @@ const DocuGenie: React.FC<IDocuGenieProps> = (props) => {
     formData.append('question', question);
 
     try {
-      const response = await fetch('http://localhost:7210/api/DocumentChat', {
+      const response = await fetch('https://functionapp-docugenie.azurewebsites.net/api/DocumentChat', {
         method: 'POST',
         body: formData,
       });
 
+      console.log('Raw response:', response);
+
       if (!response.ok) {
-        throw new Error('Failed to fetch response from Azure Function.');
+        const errorText = await response.text();
+        throw new Error(`Failed to fetch response from Azure Function. Status: ${response.status}, Message: ${errorText}`);
       }
 
-      const result = await response.json();
-      const { question, answer } = result;
+      let result;
+      try {
+        result = await response.json();
+      } catch (jsonError) {
+        throw new Error('Failed to parse JSON response from Azure Function.');
+      }
+      console.log('Parsed result:', result);
+      const { question: q, answer } = result;
       const timestamp = new Date().toLocaleString();
       setChatHistory([
         ...chatHistory,
-        { sender: 'User', message: question, timestamp },
-        { sender: 'Docu Genie', message: answer, timestamp },
+        { sender: 'User', message: q || question, timestamp },
+        { sender: 'Docu Genie', message: answer || '', timestamp },
       ]);
       setQuestion(''); // Clear the question input
-    } catch (error) {
-      message.error('An error occurred while processing your request.');
+    } catch (error: any) {
+      message.error(error.message || 'An error occurred while processing your request.');
     } finally {
       setIsLoading(false);
     }
@@ -108,75 +117,70 @@ const DocuGenie: React.FC<IDocuGenieProps> = (props) => {
   return (
     <>
       {contextHolder}
-      <section className={`${styles.docuGenie} ${hasTeamsContext ? styles.teams : ''}`}>
-        <Card title="Chat with Docu Genie" className={styles.chatContainer} extra={<Button shape="circle" icon={<RedoOutlined />} onClick={resetChat} />} styles={{
-          header: {
-            backgroundColor: '#e91e63',
-            borderBottom: '1px solid #e8e8e8',
-            fontSize: '1.4rem',
-            color: '#fff',
-            fontWeight: 400
-          },
-          body: {
-            border: '1px solid #e8e8e8',
-            borderRadius: '5px',
-          }
-        }}>
-          <div className={styles.chatWindow}>
-            <List
-              dataSource={chatHistory}
-              renderItem={(item) => (
-                <List.Item className={item.sender === 'User' ? styles.userMessageContainer : styles.aiMessageContainer}>
-                  <div className={item.sender === 'User' ? styles.userMessage : styles.aiMessage}>
-                    {/* <strong>{item.sender}</strong> */}
-                    <div className={styles.timestamp}>{item.timestamp}</div>
-                    
-                    {item.sender === 'User' ? <div>{item.message}</div> : <MarkdownRenderer markdownContent={item.message} />}                    
-
-                  </div>
-                </List.Item>
-              )}
-            />
-          </div>
-
-          <div className={styles.inputSection}>
-            <TextArea
-              rows={2}
-              placeholder="Ask a question about the file..."
-              value={question}
-              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setQuestion(e.target.value)}
-            />
-
-            <Button
-              onClick={handleQuestionSubmit}
-              size="large"
-              loading={isLoading}
-              disabled={!file || !question}
-            >
-              Submit
-            </Button>
-          </div>
-          <div className={styles.uploadSection}>
-
-            <Upload
-              beforeUpload={handleFileUpload}
-              showUploadList={false}
-              accept=".pdf,.docx,.txt"
-            >
-
-              <Button
-                type="primary"
-                icon={<UploadOutlined />}
-              >
-                Attach file
-              </Button>
-
-            </Upload>
-            {file && <div className={styles.fileName}>{file.name}</div>}
-          </div>
-        </Card>
-
-      </section>
+      <Flex gap="middle" vertical>
+        <Spin spinning={isLoading} tip="Processing...">
+          <section className={`${styles.docuGenie} ${hasTeamsContext ? styles.teams : ''}`}>
+            <Card title="Chat with Docu Genie" className={styles.chatContainer} extra={<Button shape="circle" icon={<RedoOutlined />} onClick={resetChat} />} styles={{
+              header: {
+                backgroundColor: '#e91e63',
+                borderBottom: '1px solid #e8e8e8',
+                fontSize: '1.4rem',
+                color: '#fff',
+                fontWeight: 400
+              },
+              body: {
+                border: '1px solid #e8e8e8',
+                borderRadius: '5px',
+              }
+            }}>
+              <div className={styles.chatWindow}>
+                <List
+                  dataSource={chatHistory}
+                  renderItem={(item) => (
+                    <List.Item className={item.sender === 'User' ? styles.userMessageContainer : styles.aiMessageContainer}>
+                      <div className={item.sender === 'User' ? styles.userMessage : styles.aiMessage}>
+                        {/* <strong>{item.sender}</strong> */}
+                        <div className={styles.timestamp}>{item.timestamp}</div>
+                        {item.sender === 'User' ? <div>{item.message}</div> : <MarkdownRenderer markdownContent={item.message} />}
+                      </div>
+                    </List.Item>
+                  )}
+                />
+              </div>
+              <div className={styles.inputSection}>
+                <TextArea
+                  rows={2}
+                  placeholder="Ask a question about the file..."
+                  value={question}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setQuestion(e.target.value)}
+                />
+                <Button
+                  onClick={handleQuestionSubmit}
+                  size="large"                 
+                  disabled={!file || !question}
+                >
+                  Submit
+                </Button>
+              </div>
+              <div className={styles.uploadSection}>
+                <Upload
+                  beforeUpload={handleFileUpload}
+                  showUploadList={false}
+                  accept=".pdf,.docx,.txt"
+                >
+                  <Button
+                    type="primary"
+                    icon={<UploadOutlined />}
+                  >
+                    Attach file
+                  </Button>
+                </Upload>
+                {file && <div className={styles.fileName}>{file.name}</div>}
+              </div>
+            </Card>
+          </section>
+        </Spin>
+      </Flex>
     </>
   );
 };
